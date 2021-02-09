@@ -25,6 +25,10 @@ library(ggtree)
 library(scales)
 library(phytools)
 library(picante)
+library(DESeq2)
+library(pheatmap)
+library(RColorBrewer)
+
 
 setwd(".")
 
@@ -1157,12 +1161,12 @@ fig4 <- ggplot(richness_ra_core_long_rhizo, aes(x = percent, y = 100*relative_ab
        y = "Richness maintained (%)")
 
 
-FigS6 <- ggarrange(fig3, fig1, fig4, fig2,
+FigS8 <- ggarrange(fig3, fig1, fig4, fig2,
                     ncol = 2, nrow = 2, label.x = 0.12,
                     font.label = list(size = 30))
 
-jpeg("figS6.jpeg", res = 300, width = 5000, height = 3000)
-FigS6
+jpeg("FigS8.jpeg", res = 300, width = 5000, height = 3000)
+FigS8
 dev.off()
 
 
@@ -1462,11 +1466,15 @@ theme_NTI <- theme_bw() + theme(axis.title.x = element_blank(),
                                 strip.text.x = element_text(size = 20),
                                 strip.background = element_rect(fill = "grey90"))
 
-#Histogram
-fig_NTI_all_hist <- ggplot(all_NTI, aes(x = NTI)) + 
+#Histogram for NTI
+FigS5a <- ggplot(all_NTI, aes(x = NTI)) + 
   geom_histogram(aes(y = ..density..), bins = 18) + facet_wrap(~Compartment) +
   geom_vline(aes(xintercept = 2), linetype = "dashed") + 
   geom_density() + theme_NTI + labs(y = "Density", x = "NTI")
+
+jpeg("FigS5a.jpeg", res = 300, height = 3000, width = 4000)
+FigS5a
+dev.off()
 
 
 ########CALCULATE BETA-NTI########
@@ -1840,12 +1848,7 @@ Compartment_same_Spartina_bNTI_Skio19$Location <- "Skidaway 2019"
 
 
 
-
-
-
-
-
-#Same Spartina bNTI
+#Same Spartina and same compartment - bNTI pairwise comparison
 
 Compartment_same_Spartina_bNTI <- rbind(Compartment_same_Spartina_bNTI_Skio19, 
                                         Compartment_same_Spartina_bNTI_Sapelo19,
@@ -1870,30 +1873,143 @@ theme_bNTI <- theme_bw() + theme(axis.title.x = element_blank(),
                                  strip.background = element_rect(fill = "grey90"))
 
 
-#Histogram
-fig_same_Spartina_hist <- ggplot(Compartment_same_Spartina_bNTI, aes(x = bNTI)) + 
+#Histogram for all betaNTI pairwise comparisons between samples from the  same compartment and Spartina phenotype
+FigS5b <- ggplot(Compartment_same_Spartina_bNTI, aes(x = bNTI)) + 
   geom_histogram(aes(y = ..density..), bins = 18) + facet_wrap(~Location*Compartment) +
   geom_vline(aes(xintercept = 2), linetype = "dashed") + 
   geom_vline(aes(xintercept = -2), linetype = "dashed") + 
   geom_density() + theme_bNTI + labs(y = "Density", x = "bNTI")
 
-jpeg("bNTI/Summary/same_Spartina_bNTI_hist.jpeg", res = 300, height = 3000, width = 4000)
-fig_same_Spartina_hist
+jpeg("FigS5b.jpeg", res = 300, height = 3000, width = 4000)
+FigS5b
 dev.off()
 
 
 
-#########DeSEQ2 analysis
+#########DeSEQ2 analysis####
+
+
+########## DIFFERENTIAL ABUNDANCE TESTING ###########
+
+#Keep only tall and short phenotypes (extremes)
+phy.subset_ts_endo = subset_samples(phy.tree.prev.filt, (Spartina == "Tall" | Spartina == "Short") &
+                                      (Compartment == "Endosphere" | Compartment == "Bulk_sediment"))
+
+
+# Agglomerate taxa on the Genus level
+phy.subset_ts_genus = tax_glom(phy.subset_ts_endo, taxrank = "Genus") 
+
+genus_names <- as.character(data.frame(tax_table(phy.subset_ts_genus))$Genus)
+
+taxa_names(physeq = phy.subset_ts_genus) <- genus_names
+
+sample_data(phy.subset_ts_genus)$Compartment <-
+  factor(sample_data(phy.subset_ts_genus)$Compartment,
+         levels(sample_data(phy.subset_ts_genus)$Compartment)[c(2,1)])
+
+sample_data(phy.subset_ts_genus)$Spartina <-
+  factor(sample_data(phy.subset_ts_genus)$Spartina,
+         levels(sample_data(phy.subset_ts_genus)$Spartina)[c(2,1)])
+
+
+# Compartment
+deseq.comp = phyloseq_to_deseq2(phy.subset_ts_genus, ~  Compartment)
+deseq.comp = DESeq(deseq.comp, test = "Wald", fitType = "parametric")
+
+##Extract the 25 most significant taxa having differential abundance differences along 
+#the endosphere-to-bulk-sediment gradient.
+
+res = results(deseq.comp, cooksCutoff = FALSE)
+alpha = 0.01
+sigtab = res[which(res$padj < alpha), ]
+top_pvalue_Genus <- head(order(sigtab$padj, decreasing=FALSE ), 25 )
+sigtab <- sigtab[top_pvalue_Genus,]
+sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(phy.subset_ts_genus)[rownames(sigtab), ], "matrix"))
+head(sigtab)
+sig_comp <- row.names(sigtab)
+
+
+dim(sigtab)
+
+theme_set(theme_bw())
+# Phylum order
+x = tapply(sigtab$log2FoldChange, sigtab$Phylum, function(x) max(x))
+x = sort(x, TRUE)
+# Genus order
+sigtab$Genus <- paste(as.character(sigtab$Order), as.character(sigtab$Genus), sep = ", ")
+x = tapply(sigtab$log2FoldChange, sigtab$Genus, function(x) max(x))
+x = sort(x, TRUE)
+sigtab$Genus = factor(as.character(sigtab$Genus), levels=names(x))
+
+levels_phylym <- c("Proteobacteria", "Spirochaetes", "Epsilonbacteraeota", "Bacteroidetes",
+                   "Firmicutes", "Acidobacteria", "Verrucomicrobia", "Thaumarchaeota", "Nitrospirae")
+
+sigtab$Phylum <- factor(sigtab$Phylum, levels = levels_phylym)
+
+
+#Create a custom color scale
+myColors <- brewer.pal(9,"Set3")
+names(myColors) <- levels(sigtab$Phylum)
+colScale <- scale_colour_manual(name = "Phylum",values = myColors)
+
+
+
+fig1 <- ggplot(sigtab, aes(y=Genus, x=log2FoldChange, color=Phylum)) + geom_point(size=6) +
+  expand_limits(x = c(-30,30)) + colScale + geom_vline(xintercept =0, linetype = "dashed") +
+  theme(legend.position = c(0.8,0.9), axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 20), legend.title = element_text(size = 18), 
+        legend.text = element_text(size =16), panel.grid.minor = element_blank(),
+        panel.background = element_blank()) + labs(y = "")
 
 
 
 
+# short-to-tall Spartina gradient
+deseq.comp = phyloseq_to_deseq2(phy.subset_ts_genus, ~  Spartina)
+deseq.comp = DESeq(deseq.comp, test = "Wald", fitType = "parametric")
+
+##Extract the 25 most significant taxa having differential abundance differences along 
+#the short-to-tall Spartina gradient.
+
+res = results(deseq.comp, cooksCutoff = FALSE)
+alpha = 0.01
+sigtab = res[which(res$padj < alpha), ]
+top_pvalue_Genus <- head(order(sigtab$padj, decreasing=FALSE ), 25 )
+sigtab <- sigtab[top_pvalue_Genus,]
+sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(phy.subset_ts_genus)[rownames(sigtab), ], "matrix"))
+head(sigtab)
+sig_spart <- row.names(sigtab)
+
+dim(sigtab)
+
+# Phylum order
+x = tapply(sigtab$log2FoldChange, sigtab$Phylum, function(x) max(x))
+x = sort(x, TRUE)
+# Genus order
+sigtab$Genus <- paste(as.character(sigtab$Order), as.character(sigtab$Genus), sep = ", ")
+x = tapply(sigtab$log2FoldChange, sigtab$Genus, function(x) max(x))
+x = sort(x, TRUE)
+sigtab$Genus = factor(as.character(sigtab$Genus), levels=names(x))
+
+sigtab$Phylum <- factor(sigtab$Phylum, levels = levels_phylym)
+
+fig2 <- ggplot(sigtab, aes(y=Genus, x=log2FoldChange, color=Phylum)) + geom_point(size=6) +
+  expand_limits(x = c(-30,30))  + colScale + geom_vline(xintercept =0, linetype = "dashed") +
+  theme(legend.position = c(0.8,0.88), axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 20), legend.title = element_text(size = 18), 
+        legend.text = element_text(size =16), panel.grid.minor = element_blank(),
+        panel.background = element_blank()) + labs(y = "")  +
+  scale_y_discrete(position = 'right')
+
+FigS7 <- ggarrange(fig1, fig2,
+                    ncol = 2, nrow = 1, label.x = 0.12,
+                    font.label = list(size = 30))
+
+jpeg("FigS7.jpeg", res = 300, width = 7000, height = 3500)
+FigS7
+dev.off()
 
 
-
-
-
-
-
-
-
+tiff("FigS7.tiff", res = 300, width = 7000, height = 3500)
+FigS7
+dev.off()
