@@ -353,9 +353,8 @@ samples <- unique(row.names(seqtab.nochim))
 write.table(samples, file = "../../samples_names.txt", sep = "\t")
 
 #Upload metadata
-samples <- read.csv("./metadata_new.csv", header = TRUE)
+samples <- read.csv("./metadata_per_sample.csv", header = TRUE)
 samples$Spartina = factor(samples$Spartina,levels(samples$Spartina)[c(2,1,3)])
-samples$Compartment = factor(samples$Compartment,levels(samples$Compartment)[c(2,1,3)])
 rownames(samples) <- samples$Seq_ID
 samples$Transect <- as.factor(samples$Transect)
 samples$Point <- as.factor(samples$Point)
@@ -451,9 +450,7 @@ theme_alpha <- theme_bw() + theme(axis.title.x = element_blank(),
                                   legend.position = "top", legend.title = element_blank(),
                                   legend.text = element_text(size = 16))
 
-alpha_div$Compartment <- gsub("Bulk_sediment", "Bulk sediment", alpha_div$Compartment)
 alpha_div$Compartment <- as.factor(alpha_div$Compartment)
-alpha_div$Compartment <- factor(alpha_div$Compartment,levels(alpha_div$Compartment)[c(1,3,2)])
 alpha_div$Spartina <- factor(alpha_div$Spartina,levels(alpha_div$Spartina)[c(2,1,3)])
 
 
@@ -465,7 +462,6 @@ fig_Shannon <- ggplot(alpha_div, aes (x = Compartment, y = Shannon, fill = Spart
 #Plot qPCR abundance
 
 qpcr_data <- read.csv("qpcr_data.csv", header = TRUE)
-qpcr_data$Compartment <- factor(qpcr_data$Compartment, levels = levels(qpcr_data$Compartment)[c(1,3,2)])
 
 gg_color <- function(n) {
   hues = seq(15, 375, length = n + 1)
@@ -483,7 +479,6 @@ fig_qPCR <- ggplot(qpcr_data, aes (x = Compartment, y = logcopies_g_mass, fill =
 #Plot Rank abundance
 
 dsn <- transform_sample_counts(phy.tree.prev.filt, function(x) x / sum(x) * 100)
-sample_data(dsn)$Compartment <- gsub("Bulk_sediment", "Bulk sediment", sample_data(dsn)$Compartment)
 otu_table(dsn) = t(otu_table(dsn))
 
 data <- list(abund = as.data.frame(otu_table(dsn)@.Data), 
@@ -523,7 +518,6 @@ TotalCounts <- temp3[with(temp3, order(-Mean)), ] %>%
                                                    Rank = cumsum(dummy)) %>% as.data.frame()
 
 TotalCounts$Group <- as.factor(TotalCounts$Group) 
-TotalCounts$Group <- factor(TotalCounts$Group, levels(TotalCounts$Group)[c(1,3,2)])
 
 
 rank_abund_plot <- ggplot(data = TotalCounts, aes(x = Rank, y = Cumsum, 
@@ -535,13 +529,6 @@ rank_abund_plot <- ggplot(data = TotalCounts, aes(x = Rank, y = Cumsum,
 
 
 #Plot NDMS
-
-sample_data(phy.tree.prev.filt)$Compartment <- 
-  as.factor(gsub("Bulk_sediment", "Bulk sediment", sample_data(phy.tree.prev.filt)$Compartment))
-
-sample_data(phy.tree.prev.filt)$Compartment <-
-  factor(sample_data(phy.tree.prev.filt)$Compartment,
-         levels(sample_data(phy.tree.prev.filt)$Compartment)[c(1,3,2)])
 
 sample_data(phy.tree.prev.filt)$Spartina <-
   factor(sample_data(phy.tree.prev.filt)$Spartina,
@@ -557,7 +544,7 @@ theme_ord <- theme(axis.title.x = element_text(size = 18),
                    legend.title = element_blank(),
                    legend.text = element_text(size = 16)) 
 
-ord.nmds.bray <- ordinate(phy.tree.prev.filt, method="NMDS", distance="bray")
+ord.nmds.bray <- ordinate(phy.tree.prev.filt, method="NMDS", distance="bray", k = 3)
 
 fig_nmds_bray_Spartina <- plot_ordination(phy.tree.prev.filt, ord.nmds.bray, color="Spartina",
                                           shape = "Spartina", title="Bray NMDS") + 
@@ -576,11 +563,11 @@ Fig3_final <- ggarrange(ggarrange(fig_Shannon, fig_qPCR, ncol = 2, labels = c("a
                             labels = c("d", "e"), font.label = list(size = 28)),
                   labels = c("", "c", ""), font.label = list(size = 28))
 
-jpeg("../Paper_spartina_assembly/Figures/fig_3.jpeg", width = 3800, height = 4500, res = 300)
+jpeg("./fig_3.jpeg", width = 3800, height = 4500, res = 300)
 Fig3_final
 dev.off()
 
-tiff("../Paper_spartina_assembly/Figures/fig_3.tiff", width = 3800, height = 4500, res = 300)
+tiff("./fig_3.tiff", width = 3800, height = 4500, res = 300)
 Fig3_final
 dev.off()
 
@@ -623,10 +610,15 @@ adonis(distance.bray.endo ~ Spartina + Location + Depth + Year, data = sample_me
 ##################### RELATIVE ABUNDANCE ANALYSIS ######################
 ##S and Fe oxidizers, sulfate reducers, and nitrifiers relative abundance analysis
 
+phy.prev.filt.ra  = transform_sample_counts(phy.tree.prev.filt, function(x) x / sum(x))
+Genus_ra <- tax_glom(phy.prev.filt.ra, taxrank="Genus", NArm=TRUE, bad_empty=c(NA, "", " ", "\t"))
+
+function_taxa <- read.csv("Supplementary/taxonomy_function.csv", stringsAsFactors = FALSE)
 function_taxa <- read.csv("../taxonomy_to_function/taxonomy_function.csv", stringsAsFactors = FALSE)
 Fe_Ox <- function_taxa$Fe_oxidizer
 S_Ox <- function_taxa$Sulfur_oxidizer
-S_Re <- function_taxa$Sulfur_reducers
+S_Re <- function_taxa$Sulfate_reducers
+Nitrifiers <- function_taxa$Nitrifiers
 
 theme_ra <- theme_bw() + theme(axis.title.x = element_blank(),
                                axis.title.y = element_text(size = 18),
@@ -648,20 +640,15 @@ mysqrt_trans <- function() {
             domain = c(0, Inf))
 }
 
-
-phy.prev.filt.ra  = transform_sample_counts(phy.tree.prev.filt, function(x) x / sum(x))
-Genus_ra <- tax_glom(phy.prev.filt.ra, taxrank="Genus", NArm=TRUE, bad_empty=c(NA, "", " ", "\t"))
-
-sample_data(Genus_ra)$Compartment <- gsub("Bulk_sediment", "Bulk",  sample_data(Genus_ra)$Compartment)
+sample_data(Genus_ra)$Compartment <- gsub("Bulk sediment", "Bulk",  sample_data(Genus_ra)$Compartment)
 sample_data(Genus_ra)$Compartment <- gsub("Rhizosphere", "Rhizo",  sample_data(Genus_ra)$Compartment)
-sample_data(Genus_ra)$Compartment <- gsub("Endosphere", "Endo",  sample_data(Genus_ra)$Compartment)
 sample_data(Genus_ra)$Compartment <- as.factor(sample_data(Genus_ra)$Compartment)
 
 Genus_ra_melt  <- psmelt(Genus_ra)
 
 ####Nitrifiers per Genus
 
-nitri_genus_phy <- subset_taxa(Genus_ra, grepl("Nitro", Genus))
+nitri_genus_phy <- subset_taxa(Genus_ra, Genus %in% Nitrifiers)
 
 #Select most abundant genus
 nitri_genus_phy_filt <- phyloseq_filter_prevalence(nitri_genus_phy, prev.trh = 0, 
@@ -678,8 +665,6 @@ nitri_genus_agg <- aggregate(nitri_genus_melt$Abundance, by=list(Seq_ID=nitri_ge
 names(nitri_genus_agg)[length(nitri_genus_agg)] <- "rel_abund"
 
 nitri_genus_agg$Compartment <- as.factor(nitri_genus_agg$Compartment)
-nitri_genus_agg$Compartment <- factor(nitri_genus_agg$Compartment,
-                                      levels(nitri_genus_agg$Compartment)[c(1,3,2)])
 
 nitri_genus_agg$Spartina <- as.factor(nitri_genus_agg$Spartina)
 nitri_genus_agg$Spartina <- factor(nitri_genus_agg$Spartina,
@@ -690,16 +675,19 @@ fig_nitri <- ggplot(nitri_genus_agg, aes (x = Compartment, y = rel_abund*100, fi
   geom_boxplot() + facet_wrap(~Genus, ncol = 1) + coord_flip() + theme_ra +
   scale_y_continuous(trans="mysqrt", limits=c(0, 4.5), breaks = c(0,0.4,1.7, 4)) + 
   theme(axis.text.x = element_text(angle = 0), axis.title.y = element_blank(),
-        axis.title.x = element_text(size = 18), legend.position = "none") + labs(y = "Relative abundance (%)", x = "")
+        axis.title.x = element_text(size = 18), legend.position = "none",
+        strip.text = element_text(face = "italic")) + 
+  labs(y = "Relative abundance (%)", x = "")
 
 
 ##Nitrifiers total
 
 nitri_ra_sum <- aggregate(nitri_genus_melt$Abundance, by=list(nitri_genus_melt=nitri_genus_melt$Seq_ID, Spartina=nitri_genus_melt$Spartina,
                                                               Compartment=nitri_genus_melt$Compartment, Location=nitri_genus_melt$Location,
-                                                              Depth=nitri_genus_melt$Depth), FUN=sum)
+                                                              Depth=nitri_genus_melt$Depth,
+                                                              Transect = nitri_genus_melt$Transect), FUN=sum)
 
-names(nitri_ra_sum)[6] <- "nitri_ra_sum"
+names(nitri_ra_sum)[7] <- "nitri_ra_sum"
 
 nitri_ra_sum$nitri_ra_sum <- nitri_ra_sum$nitri_ra_sum*100
 
@@ -707,8 +695,6 @@ nitri_ra_sum$nitri_ra_sum <- nitri_ra_sum$nitri_ra_sum*100
 ##Model and plotting
 
 nitri_ra_sum$Compartment <- as.factor(nitri_ra_sum$Compartment)
-nitri_ra_sum$Compartment <- factor(nitri_ra_sum$Compartment,
-                                   levels(nitri_ra_sum$Compartment)[c(1,3,2)])
 
 nitri_ra_sum$Spartina <- as.factor(nitri_ra_sum$Spartina)
 nitri_ra_sum$Spartina <- factor(nitri_ra_sum$Spartina,
@@ -720,7 +706,15 @@ fig_0 <- g + geom_boxplot() +
   theme_ra + labs(y = "Nitrifiers (%)") + 
   scale_y_continuous(trans="mysqrt", limits=c(0, 5.5), breaks = c(0,0.3, 1.3, 3 ,5))
 
+mod_nit <- lme(sqrt(nitri_ra_sum) ~ Spartina * Compartment, random = ~1|Transect, data=nitri_ra_sum)
+plot(mod_nit)
+anova(mod_nit)
 
+ref_grid(mod_nit)
+aero.mlsm <- emmeans(mod_nit, ~ "Compartment*Spartina")
+sign.aero<-cld(aero.mlsm, alpha=0.05)
+sign.aero
+sign.aero <- as.data.frame(sign.aero)
 
 #######
 Fe_Ox_genus_phy <- subset_taxa(Genus_ra, Genus %in% Fe_Ox)
@@ -738,8 +732,6 @@ Fe_Ox_genus_agg <- aggregate(Fe_Ox_genus_melt$Abundance, by=list(Seq_ID=Fe_Ox_ge
 names(Fe_Ox_genus_agg)[length(Fe_Ox_genus_agg)] <- "rel_abund"
 
 Fe_Ox_genus_agg$Compartment <- as.factor(Fe_Ox_genus_agg$Compartment)
-Fe_Ox_genus_agg$Compartment <- factor(Fe_Ox_genus_agg$Compartment,
-                                      levels(Fe_Ox_genus_agg$Compartment)[c(1,3,2)])
 
 Fe_Ox_genus_agg$Spartina <- as.factor(Fe_Ox_genus_agg$Spartina)
 Fe_Ox_genus_agg$Spartina <- factor(Fe_Ox_genus_agg$Spartina,
@@ -750,7 +742,9 @@ fig_iron <- ggplot(Fe_Ox_genus_agg, aes (x = Compartment, y = rel_abund*100, fil
   geom_boxplot() + facet_wrap(~Genus, ncol = 1) + coord_flip() + theme_ra +
   scale_y_continuous(trans="mysqrt", limits=c(0, 11), breaks = c(0,0.5,2.5, 6, 10.5)) + 
   theme(axis.text.x = element_text(angle = 0), axis.title.y = element_blank(),
-        axis.title.x = element_text(size = 18), legend.position = "none") + labs(y = "Relative abundance (%)", x = "")
+        axis.title.x = element_text(size = 18), legend.position = "none",
+        strip.text = element_text(face = "italic")) + 
+  labs(y = "Relative abundance (%)", x = "")
 
 
 #FeOx
@@ -759,9 +753,10 @@ Fe_ox_ra$Seq_ID <- as.factor(Fe_ox_ra$Seq_ID )
 
 Fe_ox_ra_sum <- aggregate(Fe_ox_ra$Abundance, by=list(Seq_ID=Fe_ox_ra$Seq_ID, Spartina=Fe_ox_ra$Spartina,
                                                       Compartment=Fe_ox_ra$Compartment, Location=Fe_ox_ra$Location,
-                                                      Depth=Fe_ox_ra$Depth), FUN=sum)
+                                                      Depth=Fe_ox_ra$Depth,
+                                                      Transect = Fe_ox_ra$Transect), FUN=sum)
 
-names(Fe_ox_ra_sum)[6] <- "Fe_ox_ra_sum"
+names(Fe_ox_ra_sum)[7] <- "Fe_ox_ra_sum"
 
 Fe_ox_ra_sum$Fe_ox_ra_sum <- Fe_ox_ra_sum$Fe_ox_ra_sum*100
 
@@ -769,8 +764,6 @@ Fe_ox_ra_sum$Fe_ox_ra_sum <- Fe_ox_ra_sum$Fe_ox_ra_sum*100
 ##Model and plotting
 
 Fe_ox_ra_sum$Compartment <- as.factor(Fe_ox_ra_sum$Compartment)
-Fe_ox_ra_sum$Compartment <- factor(Fe_ox_ra_sum$Compartment,
-                                   levels(Fe_ox_ra_sum$Compartment)[c(1,3,2)])
 
 Fe_ox_ra_sum$Spartina <- as.factor(Fe_ox_ra_sum$Spartina)
 Fe_ox_ra_sum$Spartina <- factor(Fe_ox_ra_sum$Spartina,
@@ -783,6 +776,15 @@ fig_1 <- g + geom_boxplot() +
   theme_ra + labs(y = "Fe oxidizers (%)") + 
   scale_y_continuous(trans="mysqrt", limits=c(0, 11), breaks = c(0,0.5,2.5,6,10.5))
 
+mod_Fe <- lme(sqrt(Fe_ox_ra_sum) ~ Spartina * Compartment, random = ~1|Transect, data=Fe_ox_ra_sum)
+plot(mod_Fe)
+anova(mod_Fe)
+
+ref_grid(mod_Fe)
+aero.mlsm <- emmeans(mod_Fe, ~ "Compartment*Spartina")
+sign.aero<-cld(aero.mlsm, alpha=0.05)
+sign.aero
+sign.aero <- as.data.frame(sign.aero)
 
 #SOx
 
@@ -791,7 +793,7 @@ S_Ox_genus_phy_filt <- phyloseq_filter_prevalence(S_Ox_genus_phy, prev.trh = 0,
                                                   abund.trh = 0.5, abund.type = "total",
                                                   threshold_condition = "AND")
 
-S_Ox_genus_phy_filt <- subset_taxa(S_Ox_genus_phy, Genus == "endosymbionts" | Genus == "Candidatus_Thiodiazotropha" |
+S_Ox_genus_phy_filt <- subset_taxa(S_Ox_genus_phy, Genus == "Sulfurovum" | Genus == "Candidatus_Thiodiazotropha" |
                                      Genus == "Desulfovibrio")
 
 S_Ox_genus_melt <- psmelt(S_Ox_genus_phy_filt)
@@ -804,8 +806,6 @@ S_Ox_genus_agg <- aggregate(S_Ox_genus_melt$Abundance, by=list(Seq_ID=S_Ox_genus
 names(S_Ox_genus_agg)[length(S_Ox_genus_agg)] <- "rel_abund"
 
 S_Ox_genus_agg$Compartment <- as.factor(S_Ox_genus_agg$Compartment)
-S_Ox_genus_agg$Compartment <- factor(S_Ox_genus_agg$Compartment,
-                                     levels(S_Ox_genus_agg$Compartment)[c(1,3,2)])
 
 S_Ox_genus_agg$Spartina <- as.factor(S_Ox_genus_agg$Spartina)
 S_Ox_genus_agg$Spartina <- factor(S_Ox_genus_agg$Spartina,
@@ -815,7 +815,9 @@ fig_S_ox <- ggplot(S_Ox_genus_agg, aes (x = Compartment, y = rel_abund*100, fill
   geom_boxplot() + facet_wrap(~Genus, ncol = 1) + coord_flip() + theme_ra +
   scale_y_continuous(trans="mysqrt", limits=c(0, 60), breaks = c(0, 2, 8, 20, 38, 55)) + 
   theme(axis.text.x = element_text(angle = 0), axis.title.y = element_blank(),
-        axis.title.x = element_text(size = 18),  legend.position = "none") + labs(y = "Relative abundance (%)", x = "")
+        axis.title.x = element_text(size = 18),  legend.position = "none",
+        strip.text = element_text(face = "italic")) + 
+  labs(y = "Relative abundance (%)", x = "")
 
 
 #all of them
@@ -825,9 +827,10 @@ S_ox_ra$Seq_ID <- as.factor(S_ox_ra$Seq_ID )
 
 S_ox_ra_sum <- aggregate(S_ox_ra$Abundance, by=list(Seq_ID=S_ox_ra$Seq_ID, Spartina=S_ox_ra$Spartina,
                                                     Compartment=S_ox_ra$Compartment, Location=S_ox_ra$Location,
-                                                    Depth=S_ox_ra$Depth), FUN=sum)
+                                                    Depth=S_ox_ra$Depth, Transect = S_ox_ra$Transect),
+                         FUN=sum)
 
-names(S_ox_ra_sum)[6] <- "S_ox_ra_sum"
+names(S_ox_ra_sum)[7] <- "S_ox_ra_sum"
 
 S_ox_ra_sum$S_ox_ra_sum <- S_ox_ra_sum$S_ox_ra_sum*100
 
@@ -836,8 +839,6 @@ S_ox_ra_sum$S_ox_ra_sum <- S_ox_ra_sum$S_ox_ra_sum*100
 #Calculating SE
 
 S_ox_ra_sum$Compartment <- as.factor(S_ox_ra_sum$Compartment)
-S_ox_ra_sum$Compartment <- factor(S_ox_ra_sum$Compartment,
-                                  levels(S_ox_ra_sum$Compartment)[c(1,3,2)])
 
 S_ox_ra_sum$Spartina <- as.factor(S_ox_ra_sum$Spartina)
 S_ox_ra_sum$Spartina <- factor(S_ox_ra_sum$Spartina,
@@ -848,6 +849,15 @@ fig_2 <- g + geom_boxplot() +
   expand_limits(y = 0) + theme_ra + labs(y = "Sulfur oxidizers (%)")  + 
   scale_y_continuous(trans="mysqrt", limits=c(0, 65), breaks = c(0,2,8,20, 38, 60))
 
+mod_S_ox <- lme(log(S_ox_ra_sum) ~ Spartina * Compartment, random = ~1|Transect, data=S_ox_ra_sum)
+plot(mod_S_ox)
+anova(mod_S_ox)
+
+ref_grid(mod_S_ox)
+aero.mlsm <- emmeans(mod_S_ox, ~ "Spartina*Compartment")
+sign.aero<-cld(aero.mlsm, alpha=0.05)
+sign.aero
+sign.aero <- as.data.frame(sign.aero)
 
 
 #Sulfate Reducers
@@ -866,13 +876,12 @@ S_Re_genus_melt$Genus <- paste(S_Re_genus_melt$Order, S_Re_genus_melt$Genus, sep
 
 S_Re_genus_agg <- aggregate(S_Re_genus_melt$Abundance, by=list(Seq_ID=S_Re_genus_melt$Seq_ID, Spartina=S_Re_genus_melt$Spartina,
                                                                Compartment=S_Re_genus_melt$Compartment, Location=S_Re_genus_melt$Location,
-                                                               Depth=S_Re_genus_melt$Depth, Genus=S_Re_genus_melt$Genus), FUN=sum)
+                                                               Depth=S_Re_genus_melt$Depth, Genus=S_Re_genus_melt$Genus,
+                                                               Transect=S_Re_genus_melt$Transect), FUN=sum)
 
 names(S_Re_genus_agg)[length(S_Re_genus_agg)] <- "rel_abund"
 
 S_Re_genus_agg$Compartment <- as.factor(S_Re_genus_agg$Compartment)
-S_Re_genus_agg$Compartment <- factor(S_Re_genus_agg$Compartment,
-                                     levels(S_Re_genus_agg$Compartment)[c(1,3,2)])
 
 S_Re_genus_agg$Spartina <- as.factor(S_Re_genus_agg$Spartina)
 S_Re_genus_agg$Spartina <- factor(S_Re_genus_agg$Spartina,
@@ -882,7 +891,9 @@ fig_S_Re <- ggplot(S_Re_genus_agg, aes (x = Compartment, y = rel_abund*100, fill
   geom_boxplot() + facet_wrap(~Genus, ncol = 1) + coord_flip() + theme_ra +
   scale_y_continuous(trans="mysqrt", limits=c(0, 43), breaks = c(0, 2.5, 9, 22, 40)) + 
   theme(axis.text.x = element_text(angle = 0), axis.title.y = element_blank(),
-        axis.title.x = element_text(size = 18),  legend.position = "none") + labs(y = "Relative abundance (%)", x = "")
+        axis.title.x = element_text(size = 18),  legend.position = "none",
+        strip.text = element_text(face = "italic")) + 
+  labs(y = "Relative abundance (%)", x = "")
 
 
 S_re_ra <- Genus_ra_melt %>% filter(Genus %in% S_Re)
@@ -890,17 +901,16 @@ S_re_ra$Seq_ID <- as.factor(S_re_ra$Seq_ID )
 
 S_re_ra_sum <- aggregate(S_re_ra$Abundance, by=list(Seq_ID=S_re_ra$Seq_ID, Spartina=S_re_ra$Spartina,
                                                     Compartment=S_re_ra$Compartment, Location=S_re_ra$Location,
-                                                    Depth=S_re_ra$Depth), FUN=sum)
+                                                    Depth=S_re_ra$Depth, 
+                                                    Transect=S_re_ra$Transect), FUN=sum)
 
-names(S_re_ra_sum)[6] <- "S_re_ra_sum"
+names(S_re_ra_sum)[7] <- "S_re_ra_sum"
 
 S_re_ra_sum$S_re_ra_sum <- S_re_ra_sum$S_re_ra_sum*100
 
 ##Model and plotting
 
 S_re_ra_sum$Compartment <- as.factor(S_re_ra_sum$Compartment)
-S_re_ra_sum$Compartment <- factor(S_re_ra_sum$Compartment,
-                                  levels(S_re_ra_sum$Compartment)[c(1,3,2)])
 
 S_re_ra_sum$Spartina <- as.factor(S_re_ra_sum$Spartina)
 S_re_ra_sum$Spartina <- factor(S_re_ra_sum$Spartina,
@@ -908,12 +918,23 @@ S_re_ra_sum$Spartina <- factor(S_re_ra_sum$Spartina,
 
 g <- ggplot(data = S_re_ra_sum, aes(x = Compartment, y = S_re_ra_sum, fill = Spartina))
 fig_3 <- g + geom_boxplot() + 
-  expand_limits(y = 0) + theme_ra + labs(y = "Sulfur reducers (%)")  + 
+  expand_limits(y = 0) + theme_ra + labs(y = "Sulfate reducers (%)")  + 
   scale_y_continuous(trans="mysqrt", limits=c(0, 55), breaks = c(0,3,12,28, 50))
+
+mod_S_re <- lme(log(S_re_ra_sum) ~ Spartina * Compartment, random = ~1|Transect, data=S_re_ra_sum)
+plot(mod_S_re)
+anova(mod_S_re)
+
+ref_grid(mod_S_re)
+aero.mlsm <- emmeans(mod_S_re, ~ "Spartina*Compartment")
+sign.aero<-cld(aero.mlsm, alpha=0.05)
+sign.aero
+sign.aero <- as.data.frame(sign.aero)
+
 
 
 Fig4_final <- ggarrange(fig_0, fig_1, fig_2, fig_3, fig_nitri, fig_iron, fig_S_ox, fig_S_Re,  labels = c("a", "b", "c", "d", "", "", "", ""),
-                          nrow = 2, ncol = 4, heights = c(1,2), align = "v", font.label = c(size = 28))
+                        nrow = 2, ncol = 4, heights = c(1,2), align = "v", font.label = c(size = 28))
 
 jpeg("Fig4.jpeg", res = 300, width = 6000, height = 4000)
 Fig4_final
@@ -1179,8 +1200,13 @@ library(RColorBrewer)
 n <- 24
 qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
 col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
-col_vector_tree <- col_vector[c(1:11,13,14,17,22,27,56,53,60)]
+col_vector_tree <- col_vector[c(1:3,5:11,13,14,17,22,29,56,53,56,59)]
 pie(rep(1,74), col=(col_vector))
+
+#add 3 common ggplot colors
+
+cols = gg_color(3)
+col_vector_tree <- c(col_vector_tree, cols)
 
 ##PLOT TREE ENDOSPHERE
 endo_ASVs <- colnames(otu_table(phy_endo_core_60))
@@ -1197,128 +1223,118 @@ new_physeq <- phyloseq(my_subset, tax_table(phy.tree.prev.filt_ra),
                        sample_data(phy.tree.prev.filt_ra), phy_tree(phy.tree.prev.filt_ra))
 
 endo_rhizo_core <- subset_samples(new_physeq,
-                                  Compartment == "Endosphere" | Compartment == "Rhizosphere")
+                                  Compartment == "Root" | Compartment == "Rhizosphere")
 
-endo_rhizo_core_plot = merge_samples(endo_rhizo_core, "Compartment")
+sample_data(endo_rhizo_core)$Compartment <- as.factor(sample_data(endo_rhizo_core)$Compartment)
+
+endo_rhizo_core_plot = merge_samples(endo_rhizo_core, "Compartment", fun = mean)
+
+sample_data(endo_rhizo_core_plot)$Compartment[1] <- "Rhizosphere"
+sample_data(endo_rhizo_core_plot)$Compartment[2] <- "Root"
 
 endo_rhizo_core_plot = transform_sample_counts(endo_rhizo_core_plot, function(x)  x / 68 ) #To calculate average from 68 rhizosphere samples
-
-sample_data(endo_rhizo_core_plot)$Compartment <- gsub(pattern = "1", replacement = "Endosphere",
-                                                      sample_data(endo_rhizo_core_plot)$Compartment)
-sample_data(endo_rhizo_core_plot)$Compartment <- gsub(pattern = "2", replacement = "Rhizosphere",
-                                                      sample_data(endo_rhizo_core_plot)$Compartment)
 
 otu_table_plot <- otu_table(endo_rhizo_core_plot)
 
 log_endo <- (!(colnames(otu_table_plot) %in% endo_ASVs)) 
-otu_table(endo_rhizo_core_plot)[1, log_endo] <- 0
+otu_table(endo_rhizo_core_plot)[2, log_endo] <- 0
 
 log_rhizo <- (!(colnames(otu_table_plot) %in% rhizo_ASVs)) 
-otu_table(endo_rhizo_core_plot)[2, log_rhizo] <- 0
+otu_table(endo_rhizo_core_plot)[1, log_rhizo] <- 0
 
-
-write.csv(tax_table(endo_rhizo_core_plot), file = "Core_microbiome/tax_table_plot.csv")
+write.csv(tax_table(endo_rhizo_core_plot), file = "./tax_table_plot.csv")
 
 #Changed ASVs taxonomy names manually to name them under their closest taxonomic identity (Ejm. Unk_Anaerolineaceae)
 
-tax_table_plot <- read.csv(file = "Core_microbiome/tax_table_plot.csv", header = TRUE, row.names = 1)
+tax_table_plot <- read.csv(file = "./tax_table_plot.csv", header = TRUE, row.names = 1)
 
 tax_table(endo_rhizo_core_plot) <- as.matrix(tax_table_plot)
 
-Fig5a <- ggtree(endo_rhizo_core_plot, layout = "circular") + 
-  geom_text2(aes(subset=!isTip, label=label), hjust=-0.03, size=2) +
-  geom_tiplab(aes(label=Genus), align = FALSE, offset = 0.07, size = 3.5) + 
+Fig5a <- ggtree(endo_rhizo_core_plot) + xlim(0,1.9) +
+  geom_tiplab(aes(label=paste0('italic(', Genus, ')')), parse = T,
+              align = FALSE, offset = 0.07, size = 3.5, family = "sans", fontface = 3) + 
   geom_point(aes(x=x+hjust, color=Class, size=Abundance, shape = Compartment), alpha = 0.75) +
-  scale_color_manual(values = col_vector_tree) + xlim(0,1.7) + geom_treescale(width = 0.2, x = 0.4) +
-  theme(legend.position="bottom") + guides(shape = guide_legend(override.aes = list(size = 3)), 
-                                           color = guide_legend(override.aes = list(size = 5))) +
+  scale_color_manual(values = col_vector_tree) + geom_treescale(width = 0.2, x = 0.4) +
+  theme(legend.position="right", axis.text.x = element_text(), axis.ticks.x = element_line()) +
+  guides(shape = guide_legend(override.aes = list(size = 3)),
+         color = guide_legend(override.aes = list(size = 5), 
+                              label.theme = element_text(face = "italic", size = 10))) +
   labs(size="Relative abundance (%)")
 
-jpeg(filename = "Fig5a.jpeg", width = 5000, height = 3000, res = 300)
-Fig5a
-dev.off()
+psmelt_core <- psmelt(endo_rhizo_core)
 
-tiff(filename = "Fig5a.tiff", width = 5000, height = 3000, res = 300)
-Fig5a
-dev.off()
+#Find rhizosphere ASVs relative abundance
 
+psmelt_core_rhizo <- psmelt_core[psmelt_core$Compartment == "Rhizosphere",]
 
+psmelt_core_rhizo_SE <- summarySE(psmelt_core_rhizo, measurevar = "Abundance", 
+                            groupvars = c("OTU", "Spartina"), 
+                            na.rm = TRUE, .drop = FALSE)
 
-######RELATIVE ABUNDANCE GROUPING ASVs PER GENUS
+log_rhizo <- (!(psmelt_core_rhizo_SE$OTU %in% rhizo_ASVs))
+psmelt_core_rhizo_SE[log_rhizo, 4] <- 0
 
-sample_data(endo_rhizo_core)$Treatment <- 
-  paste(sample_data(endo_rhizo_core)$Spartina, sample_data(endo_rhizo_core)$Compartment, sep = "-")
+names(psmelt_core_rhizo_SE)[4] <- "value"
+names(psmelt_core_rhizo_SE)[2] <- "Spartina_value"
 
-endo_rhizo_core_barplot <- merge_samples(x = endo_rhizo_core, group = "Treatment", fun = mean)
+###FIND ASVs ONLY IN RHIZOSPHERE AND MULTIPLE VALUE BY 2 / TO FIX BUG IN GGTREEE...
 
-otu_table(endo_rhizo_core_barplot)[c(1,2,5,6),] <- otu_table(endo_rhizo_core_barplot)[c(1,2,5,6),]/22
-otu_table(endo_rhizo_core_barplot)[c(3,4),] <- otu_table(endo_rhizo_core_barplot)[c(3,4),]/24
+rhizo_only_ASVs <- rhizo_ASVs[!(rhizo_ASVs %in% endo_ASVs)]
 
-otu_table(endo_rhizo_core_barplot)[c(1,3,5), log_endo] <- 0
-otu_table(endo_rhizo_core_barplot)[c(2,4,6), log_rhizo] <- 0
-
-#GLOM and MELT
-endo_rhizo_core_barplot_genus <- tax_glom(endo_rhizo_core_barplot, taxrank="Genus", NArm=FALSE, bad_empty=c(NA, "", " ", "\t"))
-endo_rhizo_core_barplot_genus_melt  <- psmelt(endo_rhizo_core_barplot_genus)
-
-for(i in 1:length(endo_rhizo_core_barplot_genus_melt$Genus)){
-  if(is.na(endo_rhizo_core_barplot_genus_melt$Genus[i]) == TRUE){
-    endo_rhizo_core_barplot_genus_melt$Order[i] <- NA
+for(i in 1:length(psmelt_core_rhizo_SE$value)) {
+  if(psmelt_core_rhizo_SE$OTU[i] %in% rhizo_only_ASVs) {
+    psmelt_core_rhizo_SE$value[i] <- psmelt_core_rhizo_SE$value[i]*2
   }
 }
 
-endo_rhizo_core_barplot_genus_melt$Genus <- 
-  paste(endo_rhizo_core_barplot_genus_melt$Order, endo_rhizo_core_barplot_genus_melt$Genus, sep = ", ")
+psmelt_core_rhizo_SE$Spartina_value <- factor(psmelt_core_rhizo_SE$Spartina_value,
+                                              levels(as.factor(psmelt_core_rhizo_SE$Spartina_value))[c(2,1,3)])
 
-endo_rhizo_core_barplot_genus_melt$Genus <- gsub("Sva0081_sediment_group", "Sva0081",
-                                                 endo_rhizo_core_barplot_genus_melt$Genus)
+Fig5a_1 <- facet_plot(Fig5a, panel = "Rhizosphere Rel. Abundance (%)", data = psmelt_core_rhizo_SE,
+                      geom = geom_barh, 
+                      mapping = aes(x = value/6, fill = Spartina_value), 
+                      stat = "identity")
 
-endo_rhizo_core_barplot_genus_melt$Genus <- gsub("NA, NA", "Unknown Genus",
-                                                 endo_rhizo_core_barplot_genus_melt$Genus)
+##Find root ASVs relative abundance
 
-Genus_ra_rhizo_core_sum <- aggregate(endo_rhizo_core_barplot_genus_melt$Abundance, by=list(Seq_ID=endo_rhizo_core_barplot_genus_melt$Seq_ID, Spartina=endo_rhizo_core_barplot_genus_melt$Spartina,
-                                                                                           Compartment=endo_rhizo_core_barplot_genus_melt$Compartment, Location=endo_rhizo_core_barplot_genus_melt$Location,
-                                                                                           Depth=endo_rhizo_core_barplot_genus_melt$Depth, Genus = endo_rhizo_core_barplot_genus_melt$Genus), FUN=sum)
+psmelt_core_endo <- psmelt_core[psmelt_core$Compartment == "Root",]
 
-names(Genus_ra_rhizo_core_sum)[7] <- "relative_abundance"
+psmelt_core_endo_SE <- summarySE(psmelt_core_endo, measurevar = "Abundance", 
+                                  groupvars = c("OTU", "Spartina"), 
+                                  na.rm = TRUE, .drop = FALSE)
 
-Genus_ra_rhizo_core_plot <- summarySE(data = Genus_ra_rhizo_core_sum, measurevar = "relative_abundance", na.rm = TRUE,
-                                      groupvars = c("Spartina", "Compartment", "Genus"))
+log_endo <- (!(psmelt_core_endo_SE$OTU %in% endo_ASVs))
+psmelt_core_endo_SE[log_endo, 4] <- 0
 
-library(RColorBrewer)
-n <- 60
-qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
-col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+names(psmelt_core_endo_SE)[4] <- "value"
+names(psmelt_core_endo_SE)[2] <- "Spartina_value"
 
-Genus_ra_rhizo_core_plot$Compartment <- gsub("1", "Endosphere", Genus_ra_rhizo_core_plot$Compartment)
-Genus_ra_rhizo_core_plot$Compartment <- gsub("2", "Rhizosphere", Genus_ra_rhizo_core_plot$Compartment)
+###FIND ASVs ONLY IN ROOT AND MULTIPLE VALUE BY 2 / TO FIX BUG IN GGTREEE...
 
-Genus_ra_rhizo_core_plot$Spartina <- gsub("1", "Medium", Genus_ra_rhizo_core_plot$Spartina)
-Genus_ra_rhizo_core_plot$Spartina <- gsub("2", "Short", Genus_ra_rhizo_core_plot$Spartina)
-Genus_ra_rhizo_core_plot$Spartina <- gsub("3", "Tall", Genus_ra_rhizo_core_plot$Spartina)
+endo_only_ASVs <- endo_ASVs[!(endo_ASVs %in% rhizo_ASVs)]
 
-Genus_ra_rhizo_core_plot$Spartina <- as.factor(Genus_ra_rhizo_core_plot$Spartina)
+for(i in 1:length(psmelt_core_endo_SE$value)) {
+  if(psmelt_core_endo_SE$OTU[i] %in% endo_only_ASVs) {
+    psmelt_core_endo_SE$value[i] <- psmelt_core_endo_SE$value[i]*2
+  }
+}
 
-Genus_ra_rhizo_core_plot$Spartina = factor(Genus_ra_rhizo_core_plot$Spartina,levels(Genus_ra_rhizo_core_plot$Spartina)[c(2,1,3)])
 
-Fig5b <- ggplot(Genus_ra_rhizo_core_plot, aes(x = Spartina, y = relative_abundance, fill = Genus)) +
-  geom_bar(stat = "identity")  + scale_fill_manual(values = col_vector) + facet_grid(~Compartment) +
-  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18),
-        legend.position = "bottom", legend.text = element_text(size = 10),
-        legend.title = element_blank(), panel.background = element_blank(),
-        panel.grid = element_blank(), strip.text = element_text(size = 20)) + 
-  guides(fill=guide_legend(ncol=5)) + labs(y = "Relative abundance (%)", x = "")
+psmelt_core_endo_SE$Spartina_value <- factor(psmelt_core_endo_SE$Spartina_value,
+                                              levels(as.factor(psmelt_core_endo_SE$Spartina_value))[c(2,1,3)])
 
-jpeg("Fig5b.jpeg", width = 4250, height = 2250, res = 300)
-Fig5b
+Fig5a_2 <- facet_plot(Fig5a_1, panel = "Root Rel. Abundance (%)", data = psmelt_core_endo_SE, geom = geom_barh, 
+                      mapping = aes(x = value/6, fill = Spartina_value),
+                      stat = "identity")
+
+
+jpeg(filename = "Fig5a_1.jpeg", width = 6250, height = 3250, res = 300)
+Fig5a_2
 dev.off()
 
-tiff("Fig5b.tiff", width = 4250, height = 2250, res = 300)
-Fig5b
+tiff(filename = "Fig5a_1.tiff", width = 6250, height = 3000, res = 300)
+Fig5a_2
 dev.off()
-
-
-
 
 
 ###############PHYLOGENETIC ALFA AND BETA DIVERSITY, NTI AND BETA-NTI INDEXES#################
@@ -1451,8 +1467,6 @@ NTI_Skidaway2019$Location <- "Skidaway2019"
 all_NTI <- rbind(NTI_Sapelo2018, NTI_Sapelo2019, NTI_Skidaway2019)
 
 all_NTI$Compartment <- as.factor(all_NTI$Compartment)
-all_NTI$Compartment <- factor(all_NTI$Compartment,
-                              levels(all_NTI$Compartment)[c(1,3,2)])
 
 all_NTI$Spartina <- as.factor(all_NTI$Spartina)
 all_NTI$Spartina <- factor(all_NTI$Spartina,
@@ -1558,7 +1572,7 @@ bNTI_long_Bulk_short$Spartina <- "Short"
 
 Bulk_Spartina_bNTI <- rbind(bNTI_long_Bulk_tall[,c(3,4)], 
                             bNTI_long_Bulk_medium[,c(3,4)], bNTI_long_Bulk_short[,c(3,4)])
-Bulk_Spartina_bNTI$Compartment <- "Bulk_sediment"
+Bulk_Spartina_bNTI$Compartment <- "Bulk sediment"
 
 #Rhizosphere
 bNTI_long_Rhizosphere <- bNTI_long[grepl("Rhizosphere", bNTI_long$Sample1) & grepl("Rhizosphere", bNTI_long$Sample2),]
@@ -1681,7 +1695,7 @@ bNTI_long_Bulk_short$Spartina <- "Short"
 
 Bulk_Spartina_bNTI <- rbind(bNTI_long_Bulk_tall[,c(3,4)], 
                             bNTI_long_Bulk_medium[,c(3,4)], bNTI_long_Bulk_short[,c(3,4)])
-Bulk_Spartina_bNTI$Compartment <- "Bulk_sediment"
+Bulk_Spartina_bNTI$Compartment <- "Bulk sediment"
 
 #Rhizosphere
 bNTI_long_Rhizosphere <- bNTI_long[grepl("Rhizosphere", bNTI_long$Sample1) & grepl("Rhizosphere", bNTI_long$Sample2),]
@@ -1805,7 +1819,7 @@ bNTI_long_Bulk_short$Spartina <- "Short"
 
 Bulk_Spartina_bNTI <- rbind(bNTI_long_Bulk_tall[,c(3,4)], 
                             bNTI_long_Bulk_medium[,c(3,4)], bNTI_long_Bulk_short[,c(3,4)])
-Bulk_Spartina_bNTI$Compartment <- "Bulk_sediment"
+Bulk_Spartina_bNTI$Compartment <- "Bulk sediment"
 
 #Rhizosphere
 bNTI_long_Rhizosphere <- bNTI_long[grepl("Rhizosphere", bNTI_long$Sample1) & grepl("Rhizosphere", bNTI_long$Sample2),]
@@ -1855,8 +1869,6 @@ Compartment_same_Spartina_bNTI <- rbind(Compartment_same_Spartina_bNTI_Skio19,
                                         Compartment_same_Spartina_bNTI_Sapelo18)
 
 Compartment_same_Spartina_bNTI$Compartment <- as.factor(Compartment_same_Spartina_bNTI$Compartment)
-Compartment_same_Spartina_bNTI$Compartment <- factor(Compartment_same_Spartina_bNTI$Compartment,
-                                                     levels(Compartment_same_Spartina_bNTI$Compartment)[c(1,3,2)])
 
 Compartment_same_Spartina_bNTI$Location <- as.factor(Compartment_same_Spartina_bNTI$Location)
 Compartment_same_Spartina_bNTI$Location <- factor(Compartment_same_Spartina_bNTI$Location,
@@ -1893,7 +1905,7 @@ dev.off()
 
 #Keep only tall and short phenotypes (extremes)
 phy.subset_ts_endo = subset_samples(phy.tree.prev.filt, (Spartina == "Tall" | Spartina == "Short") &
-                                      (Compartment == "Endosphere" | Compartment == "Bulk_sediment"))
+                                      (Compartment == "Endosphere" | Compartment == "Bulk sediment"))
 
 
 # Agglomerate taxa on the Genus level
